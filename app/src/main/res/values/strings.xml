@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">个人音乐</string>
+    <string name="playback_channel">音乐播放</string>
+    <string name="download_channel">音乐下载</string>
+</resources>
