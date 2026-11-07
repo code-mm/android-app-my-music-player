@@ -1,0 +1,8 @@
+{
+  "package_name": "com.codemm.music.player",
+  "alias": "music-player-release",
+  "certificate_sha256": "2243b0256a698f91c9d6d40397bab4f17497c5831786df42826a2832a325f8e7",
+  "created_at": "2026-11-07",
+  "key_algorithm": "RSA 3072",
+  "approval": "User approved a dedicated new Release signing key; retain for future versions."
+}

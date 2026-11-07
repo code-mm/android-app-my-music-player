@@ -2,6 +2,7 @@ package com.codemm.music.player
 
 import android.app.Application
 import android.content.ComponentName
+import android.util.AtomicFile
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -117,6 +118,48 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelDownload(id: UUID) { manager.cancelWorkById(id) }
+
+    fun downloadBundle(bundle: MusicBundle): String? {
+        if (library.error.value != null) return "音乐库暂时无法写入，请重新启动应用"
+        val existing = songs.value.map { it.sha256 }.toSet()
+        val remaining = bundle.tracks.filterNot { it.sha256 in existing }.sumOf { it.size }
+        if (remaining == 0L) return "这些歌曲已全部在曲库中，无需重复下载"
+        if (library.audioDirectory.usableSpace < remaining + 16L * 1024 * 1024) return "存储空间不足，请至少预留 ${formatBytes(remaining + 16L * 1024 * 1024)}"
+        return try {
+            val json = bundle.json().toByteArray(Charsets.UTF_8)
+            val key = MessageDigest.getInstance("SHA-256").digest(json).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            val file = BatchDownloadWorker.manifestFile(getApplication(), key)
+            file.parentFile?.mkdirs()
+            val atomic = AtomicFile(file)
+            val output = atomic.startWrite()
+            try { output.write(json); atomic.finishWrite(output) }
+            catch (e: Exception) { atomic.failWrite(output); throw e }
+            enqueueBundle(key, bundle.sourceUrl)
+            null
+        } catch (_: Exception) { "无法保存下载任务，请检查存储空间后重试" }
+    }
+
+    fun retryBundle(info: WorkInfo) {
+        val key = info.outputData.getString(BatchDownloadWorker.BUNDLE_ID).orEmpty()
+        val source = info.outputData.getString(MusicDownloadWorker.URL).orEmpty()
+        if (!key.matches(Regex("[0-9a-f]{64}")) || !BatchDownloadWorker.manifestFile(getApplication(), key).isFile) {
+            _message.value = "清单已不可用，请重新扫码"
+            return
+        }
+        enqueueBundle(key, source)
+    }
+
+    private fun enqueueBundle(key: String, source: String) {
+        val request = OneTimeWorkRequestBuilder<BatchDownloadWorker>()
+            .setInputData(workDataOf(BatchDownloadWorker.BUNDLE_ID to key, MusicDownloadWorker.URL to source,
+                MusicDownloadWorker.CREATED_AT to System.currentTimeMillis()))
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 20, TimeUnit.SECONDS)
+            .addTag(MusicDownloadWorker.TAG).addTag(BatchDownloadWorker.TAG).build()
+        manager.enqueueUniqueWork("music-bundle-$key", ExistingWorkPolicy.KEEP, request)
+        _message.value = "已加入批量下载队列，已有歌曲会自动跳过"
+    }
+
     fun clearDownloadHistory() { manager.pruneWork() }
     fun clearMessage(message: String) { if (_message.value == message) _message.value = null }
 

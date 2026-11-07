@@ -1,0 +1,5 @@
+Material Icons are provided by Google through the official Material Design Icons repository:
+https://github.com/google/material-design-icons
+
+Used under the Apache License, Version 2.0; see MaterialIcons-LICENSE.txt.
+SVG icon path data was converted to Android VectorDrawable resources and tinted to match the application theme.

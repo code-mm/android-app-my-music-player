@@ -62,6 +62,8 @@ class DownloadEngine(
     fun download(
         rawUrl: String,
         destination: File,
+        expectedBytes: Long? = null,
+        expectedSha256: String? = null,
         onProgress: (bytes: Long, total: Long) -> Unit = { _, _ -> },
     ): DownloadedAudio {
         val url = AudioLink.parse(rawUrl)
@@ -81,6 +83,9 @@ class DownloadEngine(
                 }
                 val total = body.contentLength()
                 if (total > maxBytes) throw DownloadRejected("单个音乐文件不能超过 512 MB")
+                if (expectedBytes != null && total >= 0 && total != expectedBytes) {
+                    throw DownloadRejected("歌曲大小与清单不一致，请重新生成清单")
+                }
                 val digest = MessageDigest.getInstance("SHA-256")
                 var count = 0L
                 destination.parentFile?.mkdirs()
@@ -108,6 +113,10 @@ class DownloadEngine(
                     count,
                     digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
                 )
+                if ((expectedBytes != null && count != expectedBytes) ||
+                    (expectedSha256 != null && result.sha256 != expectedSha256)) {
+                    throw DownloadRejected("歌曲校验失败，请重新生成清单")
+                }
                 complete = true
                 return result
             }

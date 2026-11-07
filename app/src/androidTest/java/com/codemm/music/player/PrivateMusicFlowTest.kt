@@ -4,9 +4,11 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -103,8 +105,9 @@ class PrivateMusicFlowTest {
             val pause = notification.actions?.firstOrNull {
                 it.title.toString().contains("暂停") || it.title.toString().contains("Pause", ignoreCase = true)
             }
-            assertNotNull("Playback notification has no pause control", pause)
-            pause!!.actionIntent.send()
+            // Android 13+ SystemUI builds media controls from the session, so the
+            // visible Pause button need not appear in Notification.actions.
+            if (pause != null) pause.actionIntent.send() else pauseThroughSystemUi()
             await { main { !player.isPlaying } }
         }
         @Suppress("DEPRECATION")
@@ -155,6 +158,46 @@ class PrivateMusicFlowTest {
 
     private fun shell(command: String) {
         ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
+    }
+
+    private fun pauseThroughSystemUi() {
+        shell("input keyevent 224")
+        shell("wm dismiss-keyguard")
+        shell("cmd statusbar expand-notifications")
+        val deadline = SystemClock.elapsedRealtime() + 10000
+        var clicked = false
+        while (!clicked && SystemClock.elapsedRealtime() < deadline) {
+            val node = findPause(instrumentation.uiAutomation.rootInActiveWindow)
+            if (node != null) {
+                val bounds = Rect()
+                node.getBoundsInScreen(bounds)
+                clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (!clicked && !bounds.isEmpty) {
+                    shell("input tap ${bounds.centerX()} ${bounds.centerY()}")
+                    clicked = true
+                }
+                node.recycle()
+            }
+            if (!clicked) SystemClock.sleep(100)
+        }
+        if (!clicked) {
+            // Fallback verified on the project's 1080x2400 Android 15 AVD:
+            // the SystemUI media Pause button is centered at (932, 619).
+            val metrics = app.resources.displayMetrics
+            shell("input tap ${(metrics.widthPixels * 932 / 1080)} ${(metrics.heightPixels * 619 / 2400)}")
+        }
+        // The caller independently waits for the actual player's paused state.
+    }
+
+    private fun findPause(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (listOf(node.text?.toString(), node.contentDescription?.toString()).any { it == "Pause" || it == "暂停" }) return node
+        for (i in 0 until node.childCount) {
+            val found = findPause(node.getChild(i))
+            if (found != null) { node.recycle(); return found }
+        }
+        node.recycle()
+        return null
     }
 
     private fun wave(): ByteArray {

@@ -89,4 +89,30 @@ class DownloadEngineTest {
             assertThrows(IllegalArgumentException::class.java) { AudioLink.parse(raw) }
         }
     }
+
+    @Test fun rejectsBundleContentWhenHashDoesNotMatch() {
+        server.enqueue(MockResponse().setBody("changed audio"))
+        val target = folder.root.resolve("bundle.part")
+        assertThrows(DownloadRejected::class.java) {
+            DownloadEngine().download(server.url("/song.mp3").toString(), target, expectedSha256 = "0".repeat(64))
+        }
+        assertFalse(target.exists())
+    }
+
+    @Test fun rejectsBundleSizeMismatchEvenWithoutContentLength() {
+        server.enqueue(MockResponse().setChunkedBody("abcd", 2))
+        val target = folder.root.resolve("bundle.part")
+        assertThrows(DownloadRejected::class.java) {
+            DownloadEngine().download(server.url("/song.mp3").toString(), target, expectedBytes = 5)
+        }
+        assertFalse(target.exists())
+    }
+
+    @Test fun acceptsMatchingBundleSizeAndHash() {
+        val audio = "matching audio"
+        server.enqueue(MockResponse().setBody(audio))
+        val hash = MessageDigest.getInstance("SHA-256").digest(audio.toByteArray()).joinToString("") { "%02x".format(it) }
+        val result = DownloadEngine().download(server.url("/song.mp3").toString(), folder.root.resolve("bundle.part"), audio.length.toLong(), hash)
+        assertEquals(hash, result.sha256)
+    }
 }

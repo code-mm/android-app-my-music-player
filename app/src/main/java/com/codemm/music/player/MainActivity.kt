@@ -4,57 +4,23 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.Player
 import androidx.work.WorkInfo
 import com.journeyapps.barcodescanner.CaptureActivity
 import com.journeyapps.barcodescanner.ScanContract
@@ -74,13 +39,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
         setContent {
-            MaterialTheme(
-                colorScheme = if (isSystemInDarkTheme()) darkColorScheme(primary = Color(0xFFAAC7FF))
-                else lightColorScheme(primary = Color(0xFF315DA8), secondaryContainer = Color(0xFFE6EDFA)),
-                typography = Typography(),
-            ) { MusicScreen(onNotificationNeeded = ::requestNotifications) }
+            MusicTheme { MusicScreen(onNotificationNeeded = ::requestNotifications) }
         }
     }
 
@@ -112,87 +76,64 @@ private fun MusicScreen(model: MusicViewModel = viewModel(), onNotificationNeede
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); model.clearMessage(it) }
     }
+    val play: (Song) -> Unit = { onNotificationNeeded(); model.play(it) }
+    val togglePlay = { onNotificationNeeded(); model.togglePlay() }
     Scaffold(
+        containerColor = MusicPalette.Canvas,
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            if (playback.id != null) PlayerPanel(playback, model) { onNotificationNeeded(); model.togglePlay() }
+        topBar = {
+            MusicHeader(
+                onScan = {
+                    scanner.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                        .setCaptureActivity(QrCaptureActivity::class.java).setOrientationLocked(false)
+                        .setBeepEnabled(false).setPrompt("扫描单曲或音乐合集二维码"))
+                },
+                onPaste = { inputUrl = "" },
+            )
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column {
-                        Text("个人音乐", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                        Text("只听你收藏的音乐", style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text("♪", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary)
-                }
-                Spacer(Modifier.height(22.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = {
-                        scanner.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                            .setCaptureActivity(QrCaptureActivity::class.java).setOrientationLocked(false)
-                            .setBeepEnabled(false).setPrompt("扫描音频文件下载二维码"))
-                    }, modifier = Modifier.weight(1f)) { Text("扫码下载") }
-                    OutlinedButton(onClick = { inputUrl = "" }, modifier = Modifier.weight(1f)) { Text("粘贴链接") }
-                }
-                Spacer(Modifier.height(10.dp))
-                Text("仅存应用内部 · 不扫描手机音乐", style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+            val wide = maxWidth >= 700.dp
+            val player: @Composable () -> Unit = {
+                PlayerPanel(playback, songs.isNotEmpty(), model, togglePlay)
             }
-            libraryError?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
-            if (downloads.isNotEmpty()) item {
-                DownloadPanel(downloads, model::cancelDownload, model::clearDownloadHistory)
-            }
-            item {
-                Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("我的音乐", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text("${songs.size} 首 · ${formatBytes(songs.sumOf(Song::bytes))}", style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            if (songs.isEmpty()) item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("把喜欢的音乐留在这里", style = MaterialTheme.typography.titleMedium)
-                        Text("扫描包含音频直链的二维码，或粘贴下载地址。下载完成后即可离线播放。",
-                            style = MaterialTheme.typography.bodyMedium)
-                        Text("支持常见 MP3、M4A、AAC、WAV、FLAC、OGG 音频，具体解码能力取决于设备。",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            items(songs, key = Song::id) { song ->
-                val selected = playback.id == song.id
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer),
-                    modifier = Modifier.fillMaxWidth().clickable(enabled = playback.ready) { onNotificationNeeded(); model.play(song) },
+            if (wide) {
+                Row(
+                    Modifier.align(Alignment.TopCenter).widthIn(max = 1080.dp).fillMaxSize().padding(24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
-                    Row(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(song.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                            Text(buildString {
-                                append(formatDuration(song.durationMs)); append(" · "); append(formatBytes(song.bytes))
-                                if (selected) append(if (playback.playing) " · 正在播放" else " · 已暂停")
-                            }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        TextButton(onClick = { deleteSong = song }) { Text("删除") }
-                    }
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { player() }
+                    MusicLibraryContent(
+                        songs, playback, downloads, libraryError, play, { deleteSong = it },
+                        model::cancelDownload, model::clearDownloadHistory, model::retryBundle, Modifier.weight(1f),
+                    )
                 }
+            } else {
+                MusicLibraryContent(
+                    songs, playback, downloads, libraryError, play, { deleteSong = it },
+                    model::cancelDownload, model::clearDownloadHistory, model::retryBundle,
+                    Modifier.fillMaxSize().padding(horizontal = if (maxWidth < 360.dp) 16.dp else 20.dp),
+                    player,
+                )
             }
         }
     }
     inputUrl?.let { initial ->
-        DownloadDialog(initial, onDismiss = { inputUrl = null }) { url, title ->
-            val error = model.download(url, title)
-            if (error == null) { inputUrl = null; onNotificationNeeded() }
-            error
+        if (MusicBundle.isBundleLink(initial)) {
+            BundleDownloadDialog(initial, songs, onDismiss = { inputUrl = null }) { bundle ->
+                val error = model.downloadBundle(bundle)
+                if (error == null) { inputUrl = null; onNotificationNeeded() }
+                error
+            }
+        } else {
+            DownloadDialog(initial, onDismiss = { inputUrl = null }) { url, title ->
+                if (MusicBundle.isBundleLink(url)) { inputUrl = url.trim(); null }
+                else {
+                    val error = model.download(url, title)
+                    if (error == null) { inputUrl = null; onNotificationNeeded() }
+                    error
+                }
+            }
         }
     }
     deleteSong?.let { song ->
@@ -204,14 +145,49 @@ private fun MusicScreen(model: MusicViewModel = viewModel(), onNotificationNeede
 }
 
 @Composable
+private fun MusicLibraryContent(
+    songs: List<Song>, playback: PlaybackState, downloads: List<WorkInfo>, libraryError: String?,
+    play: (Song) -> Unit, delete: (Song) -> Unit, cancel: (java.util.UUID) -> Unit, clear: () -> Unit, retry: (WorkInfo) -> Unit,
+    modifier: Modifier, player: (@Composable () -> Unit)? = null,
+) {
+    LazyColumn(modifier, contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+        if (player != null) item(key = "player") { player() }
+        libraryError?.let { error -> item(key = "library-error") {
+            Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp))
+        } }
+        if (downloads.isNotEmpty()) item(key = "downloads") {
+            Spacer(Modifier.height(16.dp))
+            DownloadPanel(downloads, cancel, clear, retry)
+        }
+        item(key = "library-heading") {
+            Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("我的音乐", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("${songs.size} 首", style = MaterialTheme.typography.bodyMedium, color = MusicPalette.Muted)
+            }
+        }
+        if (songs.isEmpty()) item(key = "empty-library") { EmptyMusicLibrary() }
+        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
+            SongRow(song, selected = playback.id == song.id, playing = playback.playing,
+                first = index == 0, last = index == songs.lastIndex, enabled = playback.ready,
+                onPlay = { play(song) }, onDelete = { delete(song) })
+        }
+        item(key = "privacy-footer") {
+            Text("仅存应用内部", style = MaterialTheme.typography.bodySmall, color = MusicPalette.Muted,
+                modifier = Modifier.fillMaxWidth().padding(top = 32.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+    }
+}
+
+@Composable
 private fun DownloadDialog(initial: String, onDismiss: () -> Unit, onDownload: (String, String) -> String?) {
     var url by rememberSaveable(initial) { mutableStateOf(initial) }
     var title by rememberSaveable(initial) { mutableStateOf("") }
     var error by rememberSaveable(initial) { mutableStateOf<String?>(null) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("下载音乐") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("请输入音频文件直链，不支持音乐平台分享页。文件校验通过后会保存到应用内部。")
+            Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("支持音频直链或音乐合集链接，不支持音乐平台分享页。合集会先显示清单，确认后批量下载。")
                 OutlinedTextField(value = url, onValueChange = { url = it; error = null }, label = { Text("http / https 下载地址") },
                     maxLines = 4, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = title, onValueChange = { title = it.take(160) }, label = { Text("音乐名称（可选）") },
@@ -224,7 +200,7 @@ private fun DownloadDialog(initial: String, onDismiss: () -> Unit, onDownload: (
 }
 
 @Composable
-private fun DownloadPanel(downloads: List<WorkInfo>, cancel: (java.util.UUID) -> Unit, clear: () -> Unit) {
+private fun DownloadPanel(downloads: List<WorkInfo>, cancel: (java.util.UUID) -> Unit, clear: () -> Unit, retry: (WorkInfo) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -247,6 +223,9 @@ private fun DownloadPanel(downloads: List<WorkInfo>, cancel: (java.util.UUID) ->
                         Text(state, style = MaterialTheme.typography.bodySmall,
                             color = if (info.state == WorkInfo.State.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                         if (info.state == WorkInfo.State.RUNNING) {
+                            info.progress.getString(BatchDownloadWorker.CURRENT)?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
                             val bytes = info.progress.getLong(MusicDownloadWorker.BYTES, 0)
                             val total = info.progress.getLong(MusicDownloadWorker.TOTAL, -1)
                             if (total > 0) LinearProgressIndicator(progress = { (bytes.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
@@ -254,40 +233,9 @@ private fun DownloadPanel(downloads: List<WorkInfo>, cancel: (java.util.UUID) ->
                         }
                     }
                     if (!info.state.isFinished) TextButton(onClick = { cancel(info.id) }) { Text("取消") }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlayerPanel(state: PlaybackState, model: MusicViewModel, togglePlay: () -> Unit) {
-    var seeking by remember(state.id) { mutableStateOf<Float?>(null) }
-    Surface(tonalElevation = 4.dp) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp)) {
-            HorizontalDivider()
-            Spacer(Modifier.height(10.dp))
-            Text(state.title.ifBlank { "个人音乐" }, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.coerceAtLeast(1).toFloat()),
-                onValueChange = { seeking = it }, onValueChangeFinished = { seeking?.let { model.seek(it.toLong()) }; seeking = null },
-                valueRange = 0f..state.duration.coerceAtLeast(1).toFloat(), enabled = state.duration > 0)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatDuration(seeking?.toLong() ?: state.position), style = MaterialTheme.typography.labelSmall)
-                Text(formatDuration(state.duration), style = MaterialTheme.typography.labelSmall)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = model::previous, enabled = state.ready) { Text("上一首") }
-                Button(onClick = togglePlay, enabled = state.ready, modifier = Modifier.sizeIn(minWidth = 100.dp)) {
-                    if (state.buffering) CircularProgressIndicator(Modifier.sizeIn(maxWidth = 20.dp, maxHeight = 20.dp), strokeWidth = 2.dp)
-                    else Text(if (state.playing) "暂停" else "播放")
-                }
-                TextButton(onClick = model::next, enabled = state.ready) { Text("下一首") }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                TextButton(onClick = model::shuffle, enabled = state.ready) { Text(if (state.shuffle) "随机播放：开" else "随机播放：关") }
-                TextButton(onClick = model::repeat, enabled = state.ready) {
-                    Text(when (state.repeat) { Player.REPEAT_MODE_ALL -> "列表循环"; Player.REPEAT_MODE_ONE -> "单曲循环"; else -> "顺序播放" })
+                    if (info.state == WorkInfo.State.FAILED && BatchDownloadWorker.TAG in info.tags) {
+                        TextButton(onClick = { retry(info) }) { Text("重试") }
+                    }
                 }
             }
         }
@@ -300,5 +248,8 @@ fun formatDuration(ms: Long): String {
     else String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
 }
 
-fun formatBytes(bytes: Long): String = if (bytes < 1024 * 1024) String.format(Locale.ROOT, "%.0f KB", bytes / 1024.0)
-else String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024))
+fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> String.format(Locale.ROOT, "%.2f GB", bytes / (1024.0 * 1024 * 1024))
+    bytes >= 1024 * 1024 -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024))
+    else -> String.format(Locale.ROOT, "%.0f KB", bytes / 1024.0)
+}
